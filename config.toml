@@ -1,0 +1,4 @@
+nginx_pid_file = "./nginx.pid"
+
+[docker]
+label-prefix = "app-"

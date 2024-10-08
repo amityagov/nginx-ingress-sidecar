@@ -1,0 +1,19 @@
+[package]
+name = "nginx-ingress-sidecar"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bollard = "0.17.1"
+tokio = { version = "1.40.0", features = ["full"] }
+anyhow = "1.0.89"
+futures-util = "0.3.31"
+tinytemplate = "1.2.1"
+libc = "0.2.159"
+signal = "0.7.0"
+clap = { version = "4.5.19", features = ["derive"] }
+log = "0.4.22"
+env_logger = "0.11.5"
+config = "0.14.0"
+serde = { version = "1.0.210", features = ["derive"] }
+linkme = "0.3.28"
