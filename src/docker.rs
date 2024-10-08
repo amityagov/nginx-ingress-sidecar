@@ -1,14 +1,19 @@
+use std::borrow::Cow;
 use crate::configuration::{Configuration, DockerConfiguration};
 use crate::STARTERS;
+use anyhow::anyhow;
 use bollard::container::ListContainersOptions;
 use bollard::models::{ContainerSummary, EventActor, EventMessage, EventMessageTypeEnum};
-use bollard::Docker;
+use bollard::{container, Docker};
 use futures_util::StreamExt;
 use linkme::distributed_slice;
 use log::{error, info};
 use std::collections::HashMap;
+use clap::builder::Str;
+use crate::nginx::get_nginx_pid;
 
 const SERVICE_MARKER_LABEL: &str = "service";
+const SERVICE_HOST_LABEL: &str = "service-host";
 const SERVICE_PROTO_LABEL: &str = "service-protocol";
 const SERVICE_PORT_LABEL: &str = "service-port";
 
@@ -63,7 +68,7 @@ async fn initial_sync(config: &DockerConfiguration, docker: &Docker) -> anyhow::
         .await?;
 
     for container in containers {
-        process_container(container, config, &docker).await?;
+        process_add_container_to_nginx(container, config, &docker).await?;
     }
 
     Ok(())
@@ -79,57 +84,108 @@ async fn process_event(
     }
 
     if let Some(actor) = event.actor {
-        let EventActor { id, .. } = actor;
-        if let Some(id) = id {
-            let mut filters = HashMap::new();
-            filters.entry("id".to_string()).or_insert(vec![id.clone()]);
-            println!("with {}", id);
-
-            let containers = docker
-                .list_containers::<String>(Some(ListContainersOptions {
-                    filters,
-                    all: true,
-                    ..Default::default()
-                }))
-                .await?;
-
-            for container in containers {
-                process_container(container, &config, &docker).await?;
+        if let EventActor { id: Some(id), .. } = actor {
+            match &event.action {
+                Some(action) if action == "stop" => {
+                    remove_container_from_nginx(id, &config, &docker).await?;
+                }
+                Some(action) if action == "start" => {
+                    add_container_to_nginx(id, &config, &docker).await?;
+                }
+                _ => return Ok(()),
             }
         }
     }
     Ok(())
 }
 
-async fn process_container(
-    container: ContainerSummary,
+async fn remove_container_from_nginx(
+    id: String,
     config: &DockerConfiguration,
     docker: &Docker,
 ) -> anyhow::Result<()> {
-    println!("process container: {:?}", container.labels);
-
-    if let Some(labels) = container.labels {
-        println!("process labels: {:?}", labels);
-        println!("{}", config.with_label_prefix(SERVICE_MARKER_LABEL));
-        if labels.contains_key(&config.with_label_prefix(SERVICE_MARKER_LABEL)) {
-            info!("found service");
-            let service = ServiceConfiguration::read(&config, &labels)?;
+    let container = find_container(id.into(), &docker).await?;
+    if let Some(container) = container {
+        if let Some(labels) = container.labels {
+            let descriptor = ServiceConfiguration::from_labels(config, &labels)?;
         }
     }
 
     Ok(())
 }
 
+async fn add_container_to_nginx(
+    id: String,
+    config: &DockerConfiguration,
+    docker: &Docker,
+) -> anyhow::Result<()> {
+    let container = find_container(id.into(), &docker).await?;
+
+    if let Some(container) = container {
+        process_add_container_to_nginx(container, &config, &docker).await?;
+    }
+
+    Ok(())
+}
+
+async fn find_container(id: Cow<String>, docker: &Docker) -> anyhow::Result<Option<ContainerSummary>> {
+    let mut filters = HashMap::new();
+    filters.entry("id".to_string()).or_insert(vec![id.to_string()]);
+
+    let containers = docker
+        .list_containers::<String>(Some(ListContainersOptions {
+            filters,
+            all: true,
+            ..Default::default()
+        }))
+        .await?;
+    if containers.len() == 0 {
+        return Ok(None);
+    }
+
+    if containers.len() > 1 {
+        return Err(anyhow!("More than 1 container found"));
+    }
+
+    Ok(Some(containers[0].clone()))
+}
+
+async fn process_add_container_to_nginx(
+    container: ContainerSummary,
+    config: &DockerConfiguration,
+    _docker: &Docker,
+) -> anyhow::Result<()> {
+    if let Some(labels) = container.labels {
+        if labels.contains_key(&config.with_label_prefix(SERVICE_MARKER_LABEL)) {
+            let _service = ServiceConfiguration::from_labels(&config, &labels)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug)]
 struct ServiceConfiguration {
     name: String,
     port: Option<i16>,
     path: Option<String>,
+    host: String,
 }
 
 impl ServiceConfiguration {
-    fn read(config: &DockerConfiguration, labels: &HashMap<String, String>) -> anyhow::Result<Self> {
+    fn from_labels(
+        config: &DockerConfiguration,
+        labels: &HashMap<String, String>,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
-            name: "None".to_string(),
+            name: labels
+                .get(&config.with_label_prefix(SERVICE_MARKER_LABEL))
+                .map(|value| value.to_string())
+                .ok_or(anyhow!("missing service name"))?,
+            host: labels
+                .get(&config.with_label_prefix(SERVICE_HOST_LABEL))
+                .map(|value| value.to_string())
+                .ok_or(anyhow!("missing service host"))?,
             port: labels
                 .get(&config.with_label_prefix(SERVICE_PORT_LABEL))
                 .map(|value| value.parse::<i16>())

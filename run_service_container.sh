@@ -1,0 +1,1 @@
+docker run -l app-service=service -l app-service-host=service.ru -d nginx

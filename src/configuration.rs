@@ -18,6 +18,7 @@ impl Deref for Configuration {
 #[derive(Deserialize, Debug)]
 pub struct Inner {
     pub nginx_pid_file: String,
+    pub servers_path: String,
     pub docker: Option<DockerConfiguration>,
 }
 

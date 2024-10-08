@@ -1,0 +1,1 @@
+rm /opt/homebrew/etc/nginx/servers/*

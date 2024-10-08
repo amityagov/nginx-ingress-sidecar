@@ -1,0 +1,18 @@
+upstream {name}_upstream \{
+    {{ for upstream in upstreams }}
+    server {upstream.address}:{upstream.port} weight={upstream.weight};
+    {{ endfor }}
+}
+
+server \{
+    listen {listen_port} {{if ssl}}ssl{{endif}};
+    server_name {server_name};
+
+    location {path} \{
+        proxy_pass http://{name}_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

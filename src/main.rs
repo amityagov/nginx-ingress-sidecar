@@ -1,8 +1,7 @@
 use crate::configuration::Configuration;
 use clap::Parser;
-use libc::{kill, pid_t, SIGHUP};
 use linkme::distributed_slice;
-use log::{info, LevelFilter};
+use log::LevelFilter;
 use std::path::Path;
 
 mod configuration;
