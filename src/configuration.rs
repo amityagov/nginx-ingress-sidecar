@@ -36,17 +36,5 @@ impl Configuration {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct DockerConfiguration {
-    label_prefix: Option<String>,
-}
-
-impl DockerConfiguration {
-    pub fn with_label_prefix(&self, label: &str) -> String {
-        if let Some(label_prefix) = &self.label_prefix {
-            let mut label_prefix = label_prefix.clone();
-            label_prefix.push_str(label);
-            return label_prefix;
-        }
-
-        label.to_string()
-    }
+    pub label_prefix: Option<String>,
 }

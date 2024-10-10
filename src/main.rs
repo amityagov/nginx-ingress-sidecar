@@ -3,13 +3,16 @@ use clap::Parser;
 use linkme::distributed_slice;
 use log::LevelFilter;
 use std::path::Path;
+use crate::settings::Settings;
 
 mod configuration;
 mod docker;
 mod nginx;
+mod template;
+mod settings;
 
 #[distributed_slice]
-pub static STARTERS: [fn(configuration: &Configuration) -> anyhow::Result<()>];
+pub static STARTERS: [fn(settings: &Settings) -> anyhow::Result<()>];
 
 #[derive(Parser, Debug)]
 #[command(about)]
@@ -34,14 +37,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let config = Configuration::new(&config_file)?;
-
     env_logger::builder().filter_level(LevelFilter::Info).init();
+    let settings = Settings::new(&config);
 
     for starter in STARTERS {
-        starter(&config)?;
+        starter(&settings)?;
     }
-
-    println!("Done!");
 
     tokio::time::sleep(std::time::Duration::from_secs(1000)).await;
 
