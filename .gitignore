@@ -24,4 +24,5 @@ Cargo.lock
 
 /target
 
+.idea
 .DS_Store
