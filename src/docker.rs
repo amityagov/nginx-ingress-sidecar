@@ -1,5 +1,6 @@
 use crate::configuration::{Configuration, DockerConfiguration};
 use crate::nginx::{get_nginx_pid, send_nginx_reload_signal};
+use crate::settings::{DockerSettings, NginxSettings, Settings};
 use crate::STARTERS;
 use anyhow::anyhow;
 use bollard::container::ListContainersOptions;
@@ -9,7 +10,6 @@ use futures_util::StreamExt;
 use linkme::distributed_slice;
 use log::{error, info};
 use std::collections::HashMap;
-use crate::settings::{DockerSettings, NginxSettings, Settings};
 
 const SERVICE_MARKER_LABEL: &str = "service";
 const SERVICE_HOST_LABEL: &str = "service-host";
@@ -19,7 +19,6 @@ const SERVICE_PORT_LABEL: &str = "service-port";
 struct Config {
     nginx: NginxSettings,
     label_prefix: Option<String>,
-
 }
 
 impl Config {

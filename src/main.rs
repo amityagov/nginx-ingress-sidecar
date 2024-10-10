@@ -1,15 +1,17 @@
 use crate::configuration::Configuration;
+use crate::settings::Settings;
 use clap::Parser;
 use linkme::distributed_slice;
-use log::LevelFilter;
+use log::{info, warn, LevelFilter};
+use log4rs::append::console::ConsoleAppender;
+use log4rs::config::{Appender, Root};
 use std::path::Path;
-use crate::settings::Settings;
 
 mod configuration;
 mod docker;
 mod nginx;
-mod template;
 mod settings;
+mod template;
 
 #[distributed_slice]
 pub static STARTERS: [fn(settings: &Settings) -> anyhow::Result<()>];
@@ -37,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let config = Configuration::new(&config_file)?;
-    env_logger::builder().filter_level(LevelFilter::Info).init();
+    init_logging(&config)?;
     let settings = Settings::new(&config);
 
     for starter in STARTERS {
@@ -45,6 +47,19 @@ async fn main() -> anyhow::Result<()> {
     }
 
     tokio::time::sleep(std::time::Duration::from_secs(1000)).await;
+
+    Ok(())
+}
+
+fn init_logging(_: &Configuration) -> anyhow::Result<()> {
+    let stdout = ConsoleAppender::builder().build();
+
+    let mut log_builder = log4rs::Config::builder();
+    log_builder = log_builder.appender(Appender::builder().build("stdout", Box::new(stdout)));
+
+    let log_config =
+        log_builder.build(Root::builder().appender("stdout").build(LevelFilter::Info))?;
+    log4rs::init_config(log_config)?;
 
     Ok(())
 }

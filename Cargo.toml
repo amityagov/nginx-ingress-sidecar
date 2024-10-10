@@ -13,7 +13,7 @@ libc = "0.2.159"
 signal = "0.7.0"
 clap = { version = "4.5.19", features = ["derive"] }
 log = "0.4.22"
-env_logger = "0.11.5"
 config = "0.14.0"
 serde = { version = "1.0.210", features = ["derive"] }
 linkme = "0.3.28"
+log4rs = "1.3.0"

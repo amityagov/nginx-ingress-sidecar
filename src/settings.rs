@@ -1,6 +1,6 @@
+use crate::configuration::Configuration;
 use std::ops::Deref;
 use std::sync::Arc;
-use crate::configuration::Configuration;
 
 #[derive(Debug, Clone)]
 pub struct DockerSettings {
@@ -10,7 +10,7 @@ pub struct DockerSettings {
 impl DockerSettings {
     pub fn new(configuration: &Configuration) -> Option<Self> {
         configuration.docker.clone().map(|docker| Self {
-            label_prefix: docker.label_prefix.clone()
+            label_prefix: docker.label_prefix.clone(),
         })
     }
 }
@@ -55,7 +55,7 @@ impl Settings {
             inner: Arc::new(Inner {
                 nginx: NginxSettings::new(&configuration),
                 docker: DockerSettings::new(&configuration),
-            })
+            }),
         }
     }
 }

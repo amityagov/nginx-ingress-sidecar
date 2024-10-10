@@ -1,12 +1,12 @@
+use crate::configuration::Configuration;
+use crate::settings::NginxSettings;
+use crate::template::{render_template, Template};
 use libc::{kill, pid_t, SIGHUP};
 use log::info;
 use serde::Serialize;
 use std::panic::UnwindSafe;
 use std::path::Path;
 use std::{fs, panic};
-use crate::configuration::Configuration;
-use crate::settings::NginxSettings;
-use crate::template::{render_template, Template};
 
 #[derive(Debug, Serialize, Default)]
 struct ServiceRenderContext {
@@ -31,8 +31,6 @@ struct Upstream {
     weight: u8,
 }
 
-
-
 pub fn get_nginx_pid<T: AsRef<Path>>(pid_file_path: T) -> anyhow::Result<i32> {
     Ok(fs::read_to_string(pid_file_path)?.trim().parse::<i32>()?)
 }
@@ -41,7 +39,7 @@ pub fn send_nginx_reload_signal<P: Into<pid_t> + UnwindSafe>(pid: P) -> anyhow::
     panic::catch_unwind(|| unsafe {
         kill(pid.into(), SIGHUP);
     })
-        .map_err(|_| anyhow::anyhow!("reloading nginx failed"))?;
+    .map_err(|_| anyhow::anyhow!("reloading nginx failed"))?;
 
     info!("reloaded nginx with HUP");
     Ok(())
