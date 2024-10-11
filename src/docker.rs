@@ -9,8 +9,11 @@ use bollard::Docker;
 use futures_util::StreamExt;
 use linkme::distributed_slice;
 use log::{error, info};
+use serde::Serialize;
 use std::collections::HashMap;
+use serde::de::DeserializeOwned;
 use tokio::pin;
+use base64::prelude::*;
 
 const SERVICE_MARKER_LABEL: &str = "service";
 const SERVICE_HOST_LABEL: &str = "service-host";
@@ -263,4 +266,32 @@ async fn find_container<T: Into<String>>(
     }
 
     Ok(Some(containers[0].clone()))
+}
+
+const PREAMBLE: &str = "# Managed by nis";
+
+fn append_state<T: Serialize>(value: &str, state: T) -> anyhow::Result<String> {
+    let state = BASE64_STANDARD.encode(serde_json::to_string(&state)?.as_bytes());
+    let result = format!(
+        "{}\n#{}\n{}\n\n{}",
+        PREAMBLE,
+        state,
+        PREAMBLE,
+        value
+    );
+
+    Ok(result)
+}
+
+fn read_state<T: DeserializeOwned>(value: &str) -> anyhow::Result<T> {
+    let mut lines = value.lines();
+    match (lines.next(), lines.next(), lines.next()) {
+        (Some(p1), Some(value), Some(p2)) if p1 == PREAMBLE && p2 == PREAMBLE => {
+            if value.chars().next().ok_or_else(|| anyhow!("Not enough chars in line 2"))? != '#' {
+                return Err(anyhow!("Invalid state on line 2"));
+            }
+            Ok(serde_json::from_slice::<T>(&BASE64_STANDARD.decode(value[1..].as_bytes())?)?)
+        }
+        _ => anyhow::bail!("invalid state"),
+    }
 }

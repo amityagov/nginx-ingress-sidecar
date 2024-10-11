@@ -9,6 +9,7 @@ use crate::{
 
 #[derive(Serialize)]
 pub struct AcmeTemplate {
+    state: String,
     server_name: String,
     challenge_path: String,
     challenge: String,
@@ -62,6 +63,7 @@ pub async fn challenge() -> anyhow::Result<()> {
 
 async fn build_and_deploy_acme_server(_nginx: &NginxSettings) -> anyhow::Result<()> {
     let template = AcmeTemplate {
+        state: todo!(),
         server_name: todo!(),
         challenge_path: todo!(),
         challenge: todo!(),

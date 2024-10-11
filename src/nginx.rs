@@ -4,7 +4,7 @@ use libc::{kill, pid_t, SIGHUP};
 use log::info;
 use serde::Serialize;
 use std::panic::UnwindSafe;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{fs, panic};
 
 #[derive(Debug, Serialize, Default)]
@@ -69,16 +69,11 @@ pub fn save_service_template_and_reload_nginx(settings: &NginxSettings) -> anyho
     Ok(())
 }
 
-pub fn enumerate_existing_services(settings: &NginxSettings) -> anyhow::Result<Vec<String>> {
+pub fn enumerate_existing_services(settings: &NginxSettings) -> anyhow::Result<Vec<PathBuf>> {
     let pattern = Path::new(settings.servers_path.as_str())
         .join("**/nis_*.conf")
         .to_string_lossy()
         .to_string();
 
-    let result = glob::glob(&pattern)?;
-    for x in result {
-        println!("{:?}", x);
-    }
-
-    Ok(vec![])
+    Ok(glob::glob(&pattern)?.filter_map(Result::ok).collect())
 }
