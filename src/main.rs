@@ -2,11 +2,12 @@ use crate::configuration::Configuration;
 use crate::settings::Settings;
 use clap::Parser;
 use linkme::distributed_slice;
-use log::{info, warn, LevelFilter};
+use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
 use std::path::Path;
 
+mod acme;
 mod configuration;
 mod docker;
 mod nginx;
@@ -26,10 +27,7 @@ struct Args {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let config_file = args
-        .config
-        .or_else(|| Some("./config.toml".to_string()))
-        .ok_or(anyhow::anyhow!("No config file specified."))?;
+    let config_file = args.config.unwrap_or("./config.toml".to_string());
 
     if !Path::new(&config_file).exists() {
         return Err(anyhow::anyhow!(

@@ -1,5 +1,4 @@
-use crate::configuration::{Configuration, DockerConfiguration};
-use crate::nginx::{get_nginx_pid, send_nginx_reload_signal};
+use crate::nginx::{apply_operations, ServiceOperation};
 use crate::settings::{DockerSettings, NginxSettings, Settings};
 use crate::STARTERS;
 use anyhow::anyhow;
@@ -93,9 +92,33 @@ async fn initial_sync(config: &Config, docker: &Docker) -> anyhow::Result<()> {
         }))
         .await?;
 
+    info!("starting initial sync");
+    let mut services = vec![];
     for container in containers {
-        process_add_container_to_nginx(container, config, &docker).await?;
+        if let Some(service) = try_get_service_from_container(container, config).await? {
+            services.push(service);
+        }
     }
+
+    info!("found {:?} services", services.len());
+    let mut services_groups = HashMap::new();
+    for service in services {
+        services_groups
+            .entry(service.name.clone())
+            .or_insert_with(Vec::new)
+            .push(service);
+    }
+
+    let mut operations: Vec<ServiceOperation> = vec![];
+
+    for service_group in services_groups {
+        let key = &service_group.0;
+        let services = &service_group.1;
+        info!("build service \"{}\"", key);
+        operations.push(ServiceOperation::Add);
+    }
+
+    apply_operations(operations)?;
 
     Ok(())
 }
@@ -132,10 +155,8 @@ async fn remove_container_from_nginx(
 ) -> anyhow::Result<()> {
     let container = find_container(id, &docker).await?;
     if let Some(container) = container {
-        if let Some(labels) = container.labels {
-            let _descriptor = ServiceConfiguration::from_labels(&config, &labels)?;
-            let _name = _descriptor.name;
-        }
+        let _descriptor = ServiceConfiguration::new(&config, &container)?;
+        // TODO, remove
     }
 
     Ok(())
@@ -149,10 +170,65 @@ async fn add_container_to_nginx(
     let container = find_container(id, &docker).await?;
 
     if let Some(container) = container {
-        process_add_container_to_nginx(container, &config, &docker).await?;
+        let _service = try_get_service_from_container(container, &config).await?;
     }
 
     Ok(())
+}
+
+async fn try_get_service_from_container(
+    container: ContainerSummary,
+    config: &Config,
+) -> anyhow::Result<Option<ServiceConfiguration>> {
+    ServiceConfiguration::new(&config, &container)
+}
+
+#[derive(Debug)]
+struct ServiceConfiguration {
+    id: String,
+    state: String,
+    name: String,
+    port: Option<i16>,
+    path: Option<String>,
+    host: String,
+}
+
+impl ServiceConfiguration {
+    fn new(config: &Config, summary: &ContainerSummary) -> anyhow::Result<Option<Self>> {
+        let labels = summary.labels.clone().ok_or(anyhow!("labels is empty"))?;
+
+        if labels
+            .get(&config.with_label_prefix(SERVICE_MARKER_LABEL))
+            .is_none()
+        {
+            return Ok(None);
+        }
+
+        let id = summary.id.as_ref().ok_or(anyhow!("id is empty"))?;
+        let state = summary.state.as_ref().ok_or(anyhow!("state is empty"))?;
+        // let networks = summary.network_settings.as_ref().map(|s| s.networks.clone())
+        //     .ok_or(anyhow!("networks is empty"))?;
+
+        Ok(Some(Self {
+            id: id.clone(),
+            state: state.clone(),
+            name: labels
+                .get(&config.with_label_prefix(SERVICE_MARKER_LABEL))
+                .map(|value| value.to_string())
+                .ok_or(anyhow!("missing service name"))?,
+            host: labels
+                .get(&config.with_label_prefix(SERVICE_HOST_LABEL))
+                .map(|value| value.to_string())
+                .ok_or(anyhow!("missing service host"))?,
+            port: labels
+                .get(&config.with_label_prefix(SERVICE_PORT_LABEL))
+                .map(|value| value.parse::<i16>())
+                .transpose()?,
+            path: labels
+                .get(&config.with_label_prefix(SERVICE_PORT_LABEL))
+                .map(|value| value.to_string()),
+        }))
+    }
 }
 
 async fn find_container<T: Into<String>>(
@@ -169,6 +245,7 @@ async fn find_container<T: Into<String>>(
             ..Default::default()
         }))
         .await?;
+
     if containers.len() == 0 {
         return Ok(None);
     }
@@ -178,48 +255,4 @@ async fn find_container<T: Into<String>>(
     }
 
     Ok(Some(containers[0].clone()))
-}
-
-async fn process_add_container_to_nginx(
-    container: ContainerSummary,
-    config: &Config,
-    _docker: &Docker,
-) -> anyhow::Result<()> {
-    if let Some(labels) = container.labels {
-        if labels.contains_key(&config.with_label_prefix(SERVICE_MARKER_LABEL)) {
-            let _service = ServiceConfiguration::from_labels(&config, &labels)?;
-        }
-    }
-
-    Ok(())
-}
-
-#[derive(Debug)]
-struct ServiceConfiguration {
-    name: String,
-    port: Option<i16>,
-    path: Option<String>,
-    host: String,
-}
-
-impl ServiceConfiguration {
-    fn from_labels(config: &Config, labels: &HashMap<String, String>) -> anyhow::Result<Self> {
-        Ok(Self {
-            name: labels
-                .get(&config.with_label_prefix(SERVICE_MARKER_LABEL))
-                .map(|value| value.to_string())
-                .ok_or(anyhow!("missing service name"))?,
-            host: labels
-                .get(&config.with_label_prefix(SERVICE_HOST_LABEL))
-                .map(|value| value.to_string())
-                .ok_or(anyhow!("missing service host"))?,
-            port: labels
-                .get(&config.with_label_prefix(SERVICE_PORT_LABEL))
-                .map(|value| value.parse::<i16>())
-                .transpose()?,
-            path: labels
-                .get(&config.with_label_prefix(SERVICE_PORT_LABEL))
-                .map(|value| value.to_string()),
-        })
-    }
 }

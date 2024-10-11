@@ -1,4 +1,3 @@
-use crate::configuration::Configuration;
 use crate::settings::NginxSettings;
 use crate::template::{render_template, Template};
 use libc::{kill, pid_t, SIGHUP};
@@ -29,6 +28,15 @@ struct Upstream {
     address: String,
     port: u16,
     weight: u8,
+}
+
+pub enum ServiceOperation {
+    Remove,
+    Add,
+}
+
+pub fn apply_operations(_operations: Vec<ServiceOperation>) -> anyhow::Result<()> {
+    Ok(())
 }
 
 pub fn get_nginx_pid<T: AsRef<Path>>(pid_file_path: T) -> anyhow::Result<i32> {

@@ -6,10 +6,16 @@ pub struct DockerConfiguration {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct AcmeConfiguration {
+    pub email: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct Configuration {
     pub nginx_pid_file: String,
     pub servers_path: String,
     pub docker: Option<DockerConfiguration>,
+    pub acme: Option<AcmeConfiguration>,
 }
 
 impl Configuration {
