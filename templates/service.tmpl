@@ -1,3 +1,5 @@
+#{marker}
+
 upstream {name}_upstream \{
     {{ for upstream in upstreams }}
     server {upstream.address}:{upstream.port} weight={upstream.weight};

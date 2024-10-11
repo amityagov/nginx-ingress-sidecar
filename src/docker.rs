@@ -1,5 +1,6 @@
-use crate::nginx::{apply_operations, ServiceOperation};
+use crate::nginx::{apply_operations, enumerate_existing_services, ServiceOperation};
 use crate::settings::{DockerSettings, NginxSettings, Settings};
+use crate::worker::WorkerHandle;
 use crate::STARTERS;
 use anyhow::anyhow;
 use bollard::container::ListContainersOptions;
@@ -9,6 +10,7 @@ use futures_util::StreamExt;
 use linkme::distributed_slice;
 use log::{error, info};
 use std::collections::HashMap;
+use tokio::pin;
 
 const SERVICE_MARKER_LABEL: &str = "service";
 const SERVICE_HOST_LABEL: &str = "service-host";
@@ -40,13 +42,14 @@ impl Config {
 }
 
 #[distributed_slice(STARTERS)]
-pub fn start(settings: &Settings) -> anyhow::Result<()> {
+pub fn start(settings: &Settings, wait_handle: WorkerHandle) -> anyhow::Result<()> {
     let docker = settings.docker.clone();
+
     if let Some(docker) = docker {
         let config = Config::new(&settings.nginx, docker);
 
         tokio::spawn(async move {
-            match start_task(config).await {
+            match start_task(config, wait_handle).await {
                 Ok(_) => {}
                 Err(error) => {
                     println!("Failed to start docker service: {}", error);
@@ -58,13 +61,15 @@ pub fn start(settings: &Settings) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn start_task(config: Config) -> anyhow::Result<()> {
-    info!("Starting listening docker containers changes");
+async fn start_task(config: Config, mut handle: WorkerHandle) -> anyhow::Result<()> {
     let docker = Docker::connect_with_defaults()?;
-
     initial_sync(&config, &docker).await?;
 
-    let mut stream = docker.events::<String>(None);
+    let stream = docker.events::<String>(None);
+    let mut signal = handle.signal();
+    let stream = stream.take_until(signal.recv());
+    pin!(stream);
+    info!("starting listening docker containers changes");
     loop {
         if let Some(event) = stream.next().await {
             match event {
@@ -80,11 +85,14 @@ async fn start_task(config: Config) -> anyhow::Result<()> {
         }
     }
 
+    handle.done()?;
     info!("exit docker event loop");
     Ok(())
 }
 
 async fn initial_sync(config: &Config, docker: &Docker) -> anyhow::Result<()> {
+    enumerate_existing_services(&config.nginx)?;
+
     let containers = docker
         .list_containers::<String>(Some(ListContainersOptions {
             all: true,
@@ -113,13 +121,13 @@ async fn initial_sync(config: &Config, docker: &Docker) -> anyhow::Result<()> {
 
     for service_group in services_groups {
         let key = &service_group.0;
-        let services = &service_group.1;
+        let _services = &service_group.1;
         info!("build service \"{}\"", key);
         operations.push(ServiceOperation::Add);
     }
 
     apply_operations(operations)?;
-
+    info!("initial sync done");
     Ok(())
 }
 
@@ -136,10 +144,10 @@ async fn process_event(
         if let EventActor { id: Some(id), .. } = actor {
             match &event.action {
                 Some(action) if action == "stop" => {
-                    remove_container_from_nginx(id, config, &docker).await?;
+                    remove_container_from_nginx(id, config, docker).await?;
                 }
                 Some(action) if action == "start" => {
-                    add_container_to_nginx(id, &config, &docker).await?;
+                    add_container_to_nginx(id, config, docker).await?;
                 }
                 _ => return Ok(()),
             }
@@ -153,9 +161,9 @@ async fn remove_container_from_nginx(
     config: &Config,
     docker: &Docker,
 ) -> anyhow::Result<()> {
-    let container = find_container(id, &docker).await?;
+    let container = find_container(id, docker).await?;
     if let Some(container) = container {
-        let _descriptor = ServiceConfiguration::new(&config, &container)?;
+        let _descriptor = ServiceConfiguration::new(config, &container)?;
         // TODO, remove
     }
 
@@ -167,10 +175,10 @@ async fn add_container_to_nginx(
     config: &Config,
     docker: &Docker,
 ) -> anyhow::Result<()> {
-    let container = find_container(id, &docker).await?;
+    let container = find_container(id, docker).await?;
 
     if let Some(container) = container {
-        let _service = try_get_service_from_container(container, &config).await?;
+        let _service = try_get_service_from_container(container, config).await?;
     }
 
     Ok(())
@@ -180,7 +188,7 @@ async fn try_get_service_from_container(
     container: ContainerSummary,
     config: &Config,
 ) -> anyhow::Result<Option<ServiceConfiguration>> {
-    ServiceConfiguration::new(&config, &container)
+    ServiceConfiguration::new(config, &container)
 }
 
 #[derive(Debug)]
@@ -246,7 +254,7 @@ async fn find_container<T: Into<String>>(
         }))
         .await?;
 
-    if containers.len() == 0 {
+    if containers.is_empty() {
         return Ok(None);
     }
 

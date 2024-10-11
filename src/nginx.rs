@@ -68,3 +68,17 @@ pub fn save_service_template_and_reload_nginx(settings: &NginxSettings) -> anyho
     fs::write(&settings.servers_path, template)?; // TODO, filename
     Ok(())
 }
+
+pub fn enumerate_existing_services(settings: &NginxSettings) -> anyhow::Result<Vec<String>> {
+    let pattern = Path::new(settings.servers_path.as_str())
+        .join("**/nis_*.conf")
+        .to_string_lossy()
+        .to_string();
+
+    let result = glob::glob(&pattern)?;
+    for x in result {
+        println!("{:?}", x);
+    }
+
+    Ok(vec![])
+}

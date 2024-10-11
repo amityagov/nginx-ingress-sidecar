@@ -1,8 +1,9 @@
 use crate::configuration::Configuration;
 use crate::settings::Settings;
+use crate::worker::{WorkerHandle, STARTERS};
 use clap::Parser;
-use linkme::distributed_slice;
-use log::LevelFilter;
+use futures_util::future::join_all;
+use log::{info, LevelFilter};
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
 use std::path::Path;
@@ -13,9 +14,7 @@ mod docker;
 mod nginx;
 mod settings;
 mod template;
-
-#[distributed_slice]
-pub static STARTERS: [fn(settings: &Settings) -> anyhow::Result<()>];
+mod worker;
 
 #[derive(Parser, Debug)]
 #[command(about)]
@@ -40,12 +39,28 @@ async fn main() -> anyhow::Result<()> {
     init_logging(&config)?;
     let settings = Settings::new(&config);
 
+    let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);
+    let mut wait_handles = Vec::with_capacity(STARTERS.len());
+
     for starter in STARTERS {
-        starter(&settings)?;
+        let cancel = shutdown_tx.subscribe();
+        let (wait_tx, wait_rx) = tokio::sync::oneshot::channel();
+        let handle = WorkerHandle::new(cancel, wait_tx);
+        wait_handles.push(wait_rx);
+
+        starter(&settings, handle)?;
     }
 
-    tokio::time::sleep(std::time::Duration::from_secs(1000)).await;
+    info!("waiting exit signal");
+    tokio::signal::ctrl_c().await?;
 
+    info!("shutting down");
+    shutdown_tx.send(())?;
+
+    info!("waiting tasks to exit");
+    join_all(wait_handles).await;
+
+    info!("all tasks exited");
     Ok(())
 }
 

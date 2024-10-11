@@ -53,8 +53,8 @@ impl Settings {
     pub fn new(configuration: &Configuration) -> Self {
         Self {
             inner: Arc::new(Inner {
-                nginx: NginxSettings::new(&configuration),
-                docker: DockerSettings::new(&configuration),
+                nginx: NginxSettings::new(configuration),
+                docker: DockerSettings::new(configuration),
             }),
         }
     }
